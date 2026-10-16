@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Flow — Pomodoro & Task Manager</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono for crisp tabular numbers -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --accent-color: #f43f5e;
+            --accent-hover: #e11d48;
+            --accent-glow: rgba(244, 63, 94, 0.25);
+            --accent-soft: rgba(244, 63, 94, 0.12);
+        }
+
+        [data-mode="focus"] {
+            --accent-color: #f43f5e;
+            --accent-hover: #e11d48;
+            --accent-glow: rgba(244, 63, 94, 0.28);
+            --accent-soft: rgba(244, 63, 94, 0.12);
+        }
+
+        [data-mode="shortBreak"] {
+            --accent-color: #10b981;
+            --accent-hover: #059669;
+            --accent-glow: rgba(16, 185, 129, 0.28);
+            --accent-soft: rgba(16, 185, 129, 0.12);
+        }
+
+        [data-mode="longBreak"] {
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --accent-glow: rgba(59, 130, 246, 0.28);
+            --accent-soft: rgba(59, 130, 246, 0.12);
+        }
+
+        .accent-bg { background-color: var(--accent-color); }
+        .accent-bg-hover:hover { background-color: var(--accent-hover); }
+        .accent-text { color: var(--accent-color); }
+        .accent-border { border-color: var(--accent-color); }
+        .accent-soft-bg { background-color: var(--accent-soft); }
+        .accent-shadow { box-shadow: 0 10px 30px -5px var(--accent-glow); }
+
+        /* Smooth SVG Ring Transition */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.35s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.5s ease;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* Ambient Background Blob Animation */
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.45; }
+            50% { transform: scale(1.08) translate(15px, -15px); opacity: 0.65; }
+        }
+        .ambient-glow {
+            animation: pulse-slow 10s infinite ease-in-out;
+            background: radial-gradient(circle, var(--accent-glow) 0%, rgba(0,0,0,0) 70%);
+            transition: background 0.6s ease;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+    </style>
+</head>
+<body data-mode="focus" class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen font-sans selection:bg-rose-500 selection:text-white transition-colors duration-300 relative overflow-x-hidden flex flex-col justify-between">
+
+    <!-- Ambient Dynamic Glow -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div class="ambient-glow w-[36rem] h-[36rem] rounded-full absolute -top-48 -left-48 blur-3xl"></div>
+        <div class="ambient-glow w-[32rem] h-[32rem] rounded-full absolute -bottom-40 -right-40 blur-3xl" style="animation-delay: -5s;"></div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl accent-bg flex items-center justify-center text-white shadow-lg accent-shadow transition-colors duration-500">
+                <i data-lucide="flame" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
+                    Focus Flow
+                    <span class="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full accent-soft-bg accent-text">Pro</span>
+                </h1>
+                <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">Mindful productivity & timeboxing</p>
+            </div>
+        </div>
+
+        <!-- Nav Actions -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- Quick Today Pill -->
+            <div class="hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 text-xs font-medium">
+                <span class="w-2 h-2 rounded-full accent-bg animate-pulse"></span>
+                <span class="text-slate-500 dark:text-slate-400">Today:</span>
+                <span id="headerStatSessions" class="font-bold">0 sessions</span>
+                <span class="text-slate-300 dark:text-slate-700">|</span>
+                <span id="headerStatMinutes" class="font-bold">0m</span>
+            </div>
+
+            <!-- Sound Test / Mute Quick Button -->
+            <button id="quickMuteBtn" title="Toggle Sound Notifications (M)" class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800/80 text-slate-600 dark:text-slate-300 transition-all shadow-sm">
+                <i id="quickMuteIcon" data-lucide="volume-2" class="w-5 h-5"></i>
+            </button>
+
+            <!-- Theme Toggle -->
+            <button id="themeToggleBtn" title="Toggle Dark/Light Mode (T)" class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800/80 text-slate-600 dark:text-slate-300 transition-all shadow-sm">
+                <i id="themeIcon" data-lucide="sun" class="w-5 h-5"></i>
+            </button>
+
+            <!-- Settings Modal Button -->
+            <button id="openSettingsBtn" title="Timer Settings (S)" class="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800/80 text-slate-700 dark:text-slate-200 font-medium text-sm transition-all shadow-sm">
+                <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Settings</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start flex-grow">
+        
+        <!-- Left Column: Pomodoro Timer & Session Stats (7 cols on large screens) -->
+        <section class="lg:col-span-7 flex flex-col gap-6">
+            
+            <!-- Timer Card -->
+            <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl p-6 sm:p-8 flex flex-col items-center relative overflow-hidden">
+                
+                <!-- Mode Switcher Tabs -->
+                <div class="grid grid-cols-3 gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-800/90 rounded-2xl w-full max-w-md mb-6">
+                    <button data-mode-btn="focus" class="mode-tab py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 accent-bg text-white shadow-sm">
+                        Focus
+                    </button>
+                    <button data-mode-btn="shortBreak" class="mode-tab py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        Short Break
+                    </button>
+                    <button data-mode-btn="longBreak" class="mode-tab py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        Long Break
+                    </button>
+                </div>
+
+                <!-- Active Task Banner -->
+                <div id="activeTaskBanner" class="w-full max-w-md mb-4 px-4 py-2.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/50 flex items-center justify-between text-xs sm:text-sm">
+                    <div class="flex items-center gap-2 truncate">
+                        <span class="uppercase tracking-wider text-[10px] font-bold px-2 py-0.5 rounded-md accent-soft-bg accent-text">Current Task</span>
+                        <span id="currentTaskLabel" class="font-medium text-slate-700 dark:text-slate-200 truncate">Select or add a task to focus on</span>
+                    </div>
+                    <span id="currentTaskPomoBadge" class="font-mono text-xs font-semibold text-slate-500 dark:text-slate-400 ml-2 shrink-0"></span>
+                </div>
+
+                <!-- SVG Circular Timer Ring -->
+                <div class="relative w-64 h-64 sm:w-80 sm:h-80 flex items-center justify-center my-2 select-none">
+                    <svg class="w-full h-full" viewBox="0 0 280 280">
+                        <!-- Background Track Circle -->
+                        <circle
+                            class="text-slate-200/80 dark:text-slate-800"
+                            stroke="currentColor"
+                            stroke-width="10"
+                            fill="transparent"
+                            r="124"
+                            cx="140"
+                            cy="140"
+                        />
+                        <!-- Foreground Progress Circle -->
+                        <circle
+                            id="progressRing"
+                            class="progress-ring__circle"
+                            stroke="var(--accent-color)"
+                            stroke-width="10"
+                            stroke-linecap="round"
+                            fill="transparent"
+                            r="124"
+                            cx="140"
+                            cy="140"
+                        />
+                    </svg>
+
+                    <!-- Center Readout -->
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+                        <span id="sessionModeStatus" class="text-xs font-bold uppercase tracking-widest accent-text mb-1">
+                            DEEP FOCUS
+                        </span>
+                        <div id="timerDisplay" class="font-mono text-5xl sm:text-6xl font-bold tracking-tight text-slate-900 dark:text-white my-1">
+                            25:00
+                        </div>
+                        <!-- Cycle Dots Indicator -->
+                        <div class="flex items-center gap-2 mt-2" id="cycleDotsContainer" title="Pomodoro Cycle Progress">
+                            <!-- Dynamically populated dots -->
+                        </div>
+                        <span id="cycleCounterText" class="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">
+                            Session #1
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Primary Controls -->
+                <div class="flex items-center justify-center gap-4 mt-6 w-full max-w-xs">
+                    <!-- Reset Button -->
+                    <button id="resetTimerBtn" title="Reset Timer (R)" class="p-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all active:scale-95">
+                        <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                    </button>
+
+                    <!-- Start / Pause Main Button -->
+                    <button id="startPauseBtn" class="flex-1 py-4 px-8 rounded-2xl accent-bg accent-bg-hover text-white font-bold text-base sm:text-lg tracking-wide shadow-lg accent-shadow transition-all duration-200 active:scale-95 flex items-center justify-center gap-2.5">
+                        <i id="startPauseIcon" data-lucide="play" class="w-5 h-5 fill-current"></i>
+                        <span id="startPauseText">Start</span>
+                    </button>
+
+                    <!-- Skip Session Button -->
+                    <button id="skipTimerBtn" title="Skip to Next Session (N)" class="p-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all active:scale-95">
+                        <i data-lucide="skip-forward" class="w-5 h-5"></i>
+                    </button>
+                </div>
+
+                <!-- Keyboard Shortcut Hint Bar -->
+                <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 w-full flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-slate-400 dark:text-slate-500">
+                    <span class="flex items-center gap-1.5">
+                        <kbd class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px] border border-slate-200 dark:border-slate-700">Space</kbd> Start/Pause
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <kbd class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px] border border-slate-200 dark:border-slate-700">R</kbd> Reset
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <kbd class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px] border border-slate-200 dark:border-slate-700">N</kbd> Skip
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        <kbd class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono text-[10px] border border-slate-200 dark:border-slate-700">S</kbd> Settings
+                    </span>
+                </div>
+            </div>
+
+            <!-- Statistics & Daily Progress Card -->
+            <div class="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2.5">
+                        <div class="p-2 rounded-xl accent-soft-bg accent-text">
+                            <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-base font-bold">Today's Focus Analytics</h2>
+                            <p id="todayDateLabel" class="text-xs text-slate-500 dark:text-slate-400">Real-time progress stored locally</p>
+                        </div>
+                    </div>
+                    <button id="resetStatsBtn" class="text-xs text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors flex items-center gap-1 font-medium">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Reset Stats
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 sm:gap-4">
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium block">Completed</span>
+                        <div class="mt-1 flex items-baseline gap-1.5">
+                            <span id="statSessionsCount" class="text-2xl sm:text-3xl font-bold font-mono accent-text">0</span>
+                            <span class="text-xs text-slate-400">pomodoros</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium block">Focus Time</span>
+                        <div class="mt-1 flex items-baseline gap-1">
+                            <span id="statFocusTime" class="text-2xl sm:text-3xl font-bold font-mono">0m</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium block">Tasks Done</span>
+                        <div class="mt-1 flex items-baseline gap-1.5">
+                            <span id="statTasksDone" class="text-2xl sm:text-3xl font-bold font-mono text-emerald-500">0</span>
+                            <span id="statTasksTotal" class="text-xs text-slate-400">/ 0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Column: Integrated Task Manager (5 cols on large screens) -->
+        <section class="lg:col-span-5 flex flex-col bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-xl p-6 sm:p-7">
+            
+            <!-- Task Header -->
+            <div class="flex items-center justify-between pb-4 mb-4 border-b border-slate-200/70 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 rounded-xl accent-soft-bg accent-text">
+                        <i data-lucide="check-square" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold">Focus Tasks</h2>
+                        <p id="taskSummarySubtitle" class="text-xs text-slate-500 dark:text-slate-400">Est. completion: 0h 0m</p>
+                    </div>
+                </div>
+
+                <!-- Clear Completed Tasks Menu -->
+                <div class="flex items-center gap-1.5">
+                    <button id="clearCompletedTasksBtn" title="Clear Completed Tasks" class="text-xs px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium transition-colors">
+                        Clear Done
+                    </button>
+                    <button id="clearAllTasksBtn" title="Clear All Tasks" class="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-950/60 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors">
+                        <i data-lucide="trash" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Add New Task Form -->
+            <form id="addTaskForm" class="mb-5 bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 transition-all focus-within:ring-2 focus-within:ring-rose-500/40">
+                <input
+                    id="taskTitleInput"
+                    type="text"
+                    required
+                    maxlength="80"
+                    placeholder="What are you working on?"
+                    class="w-full bg-transparent text-sm sm:text-base font-medium placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none mb-3 text-slate-900 dark:text-white"
+                />
+                <div class="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-medium text-slate-500 dark:text-slate-400">Est. Pomodoros:</span>
+                        <div class="flex items-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-0.5">
+                            <button type="button" id="decPomoBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm transition-colors">-</button>
+                            <input
+                                id="taskEstInput"
+                                type="number"
+                                min="1"
+                                max="20"
+                                value="1"
+                                class="w-9 text-center font-mono text-xs font-bold bg-transparent focus:outline-none text-slate-800 dark:text-slate-100"
+                            />
+                            <button type="button" id="incPomoBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm transition-colors">+</button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="px-4 py-2 rounded-xl accent-bg accent-bg-hover text-white font-semibold text-xs sm:text-sm shadow-sm transition-all flex items-center gap-1.5 active:scale-95">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>Add Task</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Tasks List Container -->
+            <div id="taskListContainer" class="flex-1 space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                <!-- Populated dynamically via JS -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyTaskState" class="hidden py-10 text-center">
+                <div class="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                    <i data-lucide="list-todo" class="w-6 h-6"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-600 dark:text-slate-300">No tasks in your queue</p>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Add a task above and click it to set your focus target.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-4 text-center sm:flex sm:items-center sm:justify-between text-xs text-slate-400 dark:text-slate-500 border-t border-slate-200/50 dark:border-slate-800/50">
+        <p>Focus Flow — Crafted for deep work & sustainable productivity.</p>
+        <p class="mt-1 sm:mt-0">Audio synthesized via Web Audio API • Offline Ready</p>
+    </footer>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <i data-lucide="settings" class="w-5 h-5 accent-text"></i>
+                    <h3 class="text-lg font-bold">Timer Preferences</h3>
+                </div>
+                <button id="closeSettingsBtn" class="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="settingsForm" class="mt-5 space-y-5">
+                <!-- Time Durations (Minutes) -->
+                <div>
+                    <label class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-3">
+                        Duration (Minutes)
+                    </label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label for="settingFocus" class="text-xs text-slate-600 dark:text-slate-300 font-medium block mb-1">Focus</label>
+                            <input id="settingFocus" type="number" min="1" max="120" required class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-rose-500">
+                        </div>
+                        <div>
+                            <label for="settingShort" class="text-xs text-slate-600 dark:text-slate-300 font-medium block mb-1">Short Break</label>
+                            <input id="settingShort" type="number" min="1" max="60" required class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div>
+                            <label for="settingLong" class="text-xs text-slate-600 dark:text-slate-300 font-medium block mb-1">Long Break</label>
+                            <input id="settingLong" type="number" min="1" max="90" required class="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Workflow Automation -->
+                <div class="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium">Auto-start Breaks</p>
+                            <p class="text-xs text-slate-400">Automatically begin break when focus ends</p>
+                        </div>
+                        <input id="settingAutoBreak" type="checkbox" class="w-5 h-5 accent-rose-500 rounded cursor-pointer">
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium">Auto-start Pomodoros</p>
+                            <p class="text-xs text-slate-400">Automatically start next focus after break</p>
+                        </div>
+                        <input id="settingAutoPomo" type="checkbox" class="w-5 h-5 accent-rose-500 rounded cursor-pointer">
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium">Long Break Interval</p>
+                            <p class="text-xs text-slate-400">Focus sessions before a long break</p>
+                        </div>
+                        <input id="settingLongInterval" type="number" min="2" max="12" required class="w-16 px-2.5 py-1.5 text-center rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-bold text-sm">
+                    </div>
+                </div>
+
+                <!-- Audio Settings -->
+                <div class="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium">Sound Notifications</p>
+                            <p class="text-xs text-slate-400">Play chime when timer completes</p>
+                        </div>
+                        <input id="settingSoundEnabled" type="checkbox" class="w-5 h-5 accent-rose-500 rounded cursor-pointer">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="font-medium text-slate-600 dark:text-slate-300">Chime Volume</span>
+                            <div class="flex items-center gap-2">
+                                <span id="volumeValueLabel" class="font-mono">80%</span>
+                                <button type="button" id="testSoundBtn" class="text-xs accent-text font-semibold hover:underline">Test Chime</button>
+                            </div>
+                        </div>
+                        <input id="settingVolume" type="range" min="10" max="100" step="5" class="w-full accent-rose-500 cursor-pointer">
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
+                    <button type="button" id="restoreDefaultSettingsBtn" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                        Reset Defaults
+                    </button>
+                    <button type="submit" class="px-6 py-2.5 rounded-xl accent-bg accent-bg-hover text-white font-semibold text-sm shadow-md transition-all">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Non-blocking Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none"></div>
+
+    <!-- Application Logic -->
+    <script>
+        (function () {
+            'use strict';
+
+            // --- STORAGE KEYS ---
+            const STORAGE_KEYS = {
+                SETTINGS: 'focusflow_settings_v1',
+                TASKS: 'focusflow_tasks_v1',
+                STATS: 'focusflow_stats_v1',
+                ACTIVE_TASK: 'focusflow_active_task_v1',
+                THEME: 'focusflow_theme_v1'
+            };
+
+            // --- DEFAULT CONFIGURATION ---
+            const DEFAULT_SETTINGS = {
+                focus: 25,
+                shortBreak: 5,
+                longBreak: 15,
+                longBreakInterval: 4,
+                autoStartBreaks: false,
+                autoStartPomodoros: false,
+                soundEnabled: true,
+                volume: 80
+            };
+
+            const MODE_CONFIG = {
+                focus: {
+                    label: 'DEEP FOCUS',
+                    title: 'Focus'
+                },
+                shortBreak: {
+                    label: 'SHORT RECHARGE',
+                    title: 'Short Break'
+                },
+                longBreak: {
+                    label: 'RESTORATIVE BREAK',
+                    title: 'Long Break'
+                }
+            };
+
+            // --- STATE ---
+            let settings = loadSettings();
+            let tasks = loadTasks();
+            let activeTaskId = localStorage.getItem(STORAGE_KEYS.ACTIVE_TASK) || null;
+            let stats = loadTodayStats();
+
+            let currentMode = 'focus'; // 'focus' | 'shortBreak' | 'longBreak'
+            let totalSeconds = settings.focus * 60;
+            let remainingSeconds = totalSeconds;
+            let isRunning = false;
+            let timerInterval = null;
+            let targetEndTime = null;
+            let completedFocusInCycle = 0;
+
+            // SVG Ring Setup (r = 124)
+            const RING_RADIUS = 124;
+            const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+            // --- DOM ELEMENTS ---
+            const progressRing = document.getElementById('progressRing');
+            const timerDisplay = document.getElementById('timerDisplay');
+            const sessionModeStatus = document.getElementById('sessionModeStatus');
+            const startPauseBtn = document.getElementById('startPauseBtn');
+            const startPauseText = document.getElementById('startPauseText');
+            const startPauseIcon = document.getElementById('startPauseIcon');
+            const resetTimerBtn = document.getElementById('resetTimerBtn');
+            const skipTimerBtn = document.getElementById('skipTimerBtn');
+            const modeTabs = document.querySelectorAll('.mode-tab');
+            const cycleDotsContainer = document.getElementById('cycleDotsContainer');
+            const cycleCounterText = document.getElementById('cycleCounterText');
+
+            // Header & Stats DOM
+            const headerStatSessions = document.getElementById('headerStatSessions');
+            const headerStatMinutes = document.getElementById('headerStatMinutes');
+            const statSessionsCount = document.getElementById('statSessionsCount');
+            const statFocusTime = document.getElementById('statFocusTime');
+            const statTasksDone = document.getElementById('statTasksDone');
+            const statTasksTotal = document.getElementById('statTasksTotal');
+            const todayDateLabel = document.getElementById('todayDateLabel');
+            const resetStatsBtn = document.getElementById('resetStatsBtn');
+
+            // Task DOM
+            const addTaskForm = document.getElementById('addTaskForm');
+            const taskTitleInput = document.getElementById('taskTitleInput');
+            const taskEstInput = document.getElementById('taskEstInput');
+            const decPomoBtn = document.getElementById('decPomoBtn');
+            const incPomoBtn = document.getElementById('incPomoBtn');
+            const taskListContainer = document.getElementById('taskListContainer');
+            const emptyTaskState = document.getElementById('emptyTaskState');
+            const currentTaskLabel = document.getElementById('currentTaskLabel');
+            const currentTaskPomoBadge = document.getElementById('currentTaskPomoBadge');
+            const taskSummarySubtitle = document.getElementById('taskSummarySubtitle');
+            const clearCompletedTasksBtn = document.getElementById('clearCompletedTasksBtn');
+            const clearAllTasksBtn = document.getElementById('clearAllTasksBtn');
+
+            // Settings & Theme DOM
+            const settingsModal = document.getElementById('settingsModal');
+            const openSettingsBtn = document.getElementById('openSettingsBtn');
+            const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+            const settingsForm = document.getElementById('settingsForm');
+            const settingFocus = document.getElementById('settingFocus');
+            const settingShort = document.getElementById('settingShort');
+            const settingLong = document.getElementById('settingLong');
+            const settingAutoBreak = document.getElementById('settingAutoBreak');
+            const settingAutoPomo = document.getElementById('settingAutoPomo');
+            const settingLongInterval = document.getElementById('settingLongInterval');
+            const settingSoundEnabled = document.getElementById('settingSoundEnabled');
+            const settingVolume = document.getElementById('settingVolume');
+            const volumeValueLabel = document.getElementById('volumeValueLabel');
+            const testSoundBtn = document.getElementById('testSoundBtn');
+            const restoreDefaultSettingsBtn = document.getElementById('restoreDefaultSettingsBtn');
+            const themeToggleBtn = document.getElementById('themeToggleBtn');
+            const quickMuteBtn = document.getElementById('quickMuteBtn');
+
+            // --- WEB AUDIO SYNTHESIZER ---
+            let audioCtx = null;
+            function getAudioContext() {
+                if (!audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) {
+                        audioCtx = new AudioContextClass();
+                    }
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                return audioCtx;
+            }
+
+            // Synthesize pleasant harmonic chime on session completion or click
+            function playSound(type = 'complete') {
+                if (!settings.soundEnabled) return;
+                try {
+                    const ctx = getAudioContext();
+                    if (!ctx) return;
+
+                    const masterGain = ctx.createGain();
+                    const gainVolume = (settings.volume / 100) * 0.35;
+                    masterGain.gain.setValueAtTime(gainVolume, ctx.currentTime);
+                    masterGain.connect(ctx.destination);
+
+                    if (type === 'click') {
+                        const osc = ctx.createOscillator();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(520, ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(240, ctx.currentTime + 0.045);
+                        masterGain.gain.setValueAtTime(gainVolume * 0.4, ctx.currentTime);
+                        masterGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.045);
+                        osc.connect(masterGain);
+                        osc.start();
+                        osc.stop(ctx.currentTime + 0.05);
+                        return;
+                    }
+
+                    // Multi-note harmonic bell sequence for timer completion
+                    const notes = currentMode === 'focus'
+                        ? [523.25, 659.25, 783.99, 1046.50] // C5, E5, G5, C6 uplifting chord
+                        : [440.00, 554.37, 659.25, 880.00];  // A4, C#5, E5, A5 gentle chime
+
+                    notes.forEach((freq, idx) => {
+                        const startTime = ctx.currentTime + idx * 0.14;
+                        const duration = 0.85;
+
+                        const osc = ctx.createOscillator();
+                        const noteGain = ctx.createGain();
+
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, startTime);
+
+                        noteGain.gain.setValueAtTime(0.001, startTime);
+                        noteGain.gain.linearRampToValueAtTime(gainVolume, startTime + 0.02);
+                        noteGain.gain.exponentialRampToValueAtTime(0.0008, startTime + duration);
+
+                        osc.connect(noteGain);
+                        noteGain.connect(ctx.destination);
+
+                        osc.start(startTime);
+                        osc.stop(startTime + duration);
+                    });
+                } catch (e) {
+                    console.warn('Web Audio playback suppressed:', e);
+                }
+            }
+
+            // --- LOCAL STORAGE HELPERS ---
+            function getTodayDateString() {
+                const now = new Date();
+                return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            }
+
+            function loadSettings() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+                    if (!raw) return { ...DEFAULT_SETTINGS };
+                    const parsed = JSON.parse(raw);
+                    return { ...DEFAULT_SETTINGS, ...parsed };
+                } catch {
+                    return { ...DEFAULT_SETTINGS };
+                }
+            }
+
+            function saveSettings() {
+                localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+            }
+
+            function loadTasks() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEYS.TASKS);
+                    if (!raw) {
+                        // Provide helpful starter tasks on first launch
+                        return [
+                            { id: 't-1', title: 'Plan top 3 priorities for today', est: 1, completedPomos: 0, done: false },
+                            { id: 't-2', title: 'Deep work sprint without distractions', est: 2, completedPomos: 0, done: false }
+                        ];
+                    }
+                    return JSON.parse(raw);
+                } catch {
+                    return [];
+                }
+            }
+
+            function saveTasks() {
+                localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+                if (activeTaskId) {
+                    localStorage.setItem(STORAGE_KEYS.ACTIVE_TASK, activeTaskId);
+                } else {
+                    localStorage.removeItem(STORAGE_KEYS.ACTIVE_TASK);
+                }
+            }
+
+            function loadTodayStats() {
+                const today = getTodayDateString();
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEYS.STATS);
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed.date === today) {
+                            return parsed;
+                        }
+                    }
+                } catch {}
+                return { date: today, completedSessions: 0, totalMinutes: 0 };
+            }
+
+            function saveTodayStats() {
+                stats.date = getTodayDateString();
+                localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(stats));
+            }
+
+            // --- TOAST NOTIFICATION ---
+            function showToast(message, iconName = 'sparkles') {
+                const toastContainer = document.getElementById('toastContainer');
+                const toast = document.createElement('div');
+                toast.className = 'pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 shadow-xl border border-slate-700/50 dark:border-slate-200 text-xs sm:text-sm font-medium transform transition-all duration-300 translate-y-2 opacity-0';
+                toast.innerHTML = `
+                    <i data-lucide="${iconName}" class="w-4 h-4 accent-text shrink-0"></i>
+                    <span class="flex-1">${escapeHTML(message)}</span>
+                `;
+                toastContainer.appendChild(toast);
+                lucide.createIcons({ nodes: [toast] });
+
+                requestAnimationFrame(() => {
+                    toast.classList.remove('translate-y-2', 'opacity-0');
+                });
+
+                setTimeout(() => {
+                    toast.classList.add('translate-y-2', 'opacity-0');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3400);
+            }
+
+            function escapeHTML(str) {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            }
+
+            // --- TIMER LOGIC ---
+            function getDurationForMode(mode) {
+                if (mode === 'focus') return settings.focus * 60;
+                if (mode === 'shortBreak') return settings.shortBreak * 60;
+                return settings.longBreak * 60;
+            }
+
+            function formatTime(secs) {
+                const mins = Math.floor(secs / 60);
+                const remSecs = secs % 60;
+                return `${String(mins).padStart(2, '0')}:${String(remSecs).padStart(2, '0')}`;
+            }
+
+            function updateRingUI() {
+                progressRing.style.strokeDasharray = `${RING_CIRCUMFERENCE} ${RING_CIRCUMFERENCE}`;
+                const ratio = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0;
+                const offset = RING_CIRCUMFERENCE - ratio * RING_CIRCUMFERENCE;
+                progressRing.style.strokeDashoffset = offset;
+            }
+
+            function updateTimerUI() {
+                const formatted = formatTime(remainingSeconds);
+                timerDisplay.textContent = formatted;
+                document.title = `(${formatted}) ${MODE_CONFIG[currentMode].title} — Focus Flow`;
+                updateRingUI();
+            }
+
+            function renderCycleDots() {
+                const interval = settings.longBreakInterval;
+                cycleDotsContainer.innerHTML = '';
+                for (let i = 0; i < interval; i++) {
+                    const dot = document.createElement('span');
+                    const isFilled = i < (completedFocusInCycle % interval);
+                    dot.className = `w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                        isFilled
+                            ? 'accent-bg scale-110 shadow-sm'
+                            : 'bg-slate-200 dark:bg-slate-800'
+                    }`;
+                    cycleDotsContainer.appendChild(dot);
+                }
+                cycleCounterText.textContent = `Focus Cycle ${(completedFocusInCycle % interval) + 1} of ${interval}`;
+            }
+
+            function switchMode(newMode, autoStart = false) {
+                pauseTimer(false);
+                currentMode = newMode;
+                document.body.setAttribute('data-mode', newMode);
+
+                // Update Tab Styles
+                modeTabs.forEach(tab => {
+                    const tabMode = tab.getAttribute('data-mode-btn');
+                    if (tabMode === newMode) {
+                        tab.className = 'mode-tab py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 accent-bg text-white shadow-sm';
+                    } else {
+                        tab.className = 'mode-tab py-2.5 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
+                    }
+                });
+
+                sessionModeStatus.textContent = MODE_CONFIG[newMode].label;
+                totalSeconds = getDurationForMode(newMode);
+                remainingSeconds = totalSeconds;
+                updateTimerUI();
+                renderCycleDots();
+
+                if (autoStart) {
+                    startTimer();
+                }
+            }
+
+            function startTimer() {
+                if (isRunning) return;
+                isRunning = true;
+                targetEndTime = Date.now() + remainingSeconds * 1000;
+
+                startPauseText.textContent = 'Pause';
+                startPauseIcon.setAttribute('data-lucide', 'pause');
+                lucide.createIcons({ nodes: [startPauseBtn] });
+
+                timerInterval = setInterval(() => {
+                    const now = Date.now();
+                    const secondsLeft = Math.max(0, Math.round((targetEndTime - now) / 1000));
+                    remainingSeconds = secondsLeft;
+                    updateTimerUI();
+
+                    if (remainingSeconds <= 0) {
+                        handleSessionComplete();
+                    }
+                }, 250);
+            }
+
+            function pauseTimer(playClick = true) {
+                if (!isRunning && playClick) return;
+                isRunning = false;
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                startPauseText.textContent = 'Start';
+                startPauseIcon.setAttribute('data-lucide', 'play');
+                lucide.createIcons({ nodes: [startPauseBtn] });
+            }
+
+            function toggleTimer() {
+                playSound('click');
+                if (isRunning) {
+                    pauseTimer(false);
+                } else {
+                    startTimer();
+                }
+            }
+
+            function resetTimer() {
+                pauseTimer(false);
+                totalSeconds = getDurationForMode(currentMode);
+                remainingSeconds = totalSeconds;
+                updateTimerUI();
+                showToast('Timer reset', 'rotate-ccw');
+            }
+
+            function handleSessionComplete(isSkipped = false) {
+                pauseTimer(false);
+
+                if (!isSkipped) {
+                    playSound('complete');
+                }
+
+                if (currentMode === 'focus') {
+                    if (!isSkipped) {
+                        completedFocusInCycle += 1;
+                        stats.completedSessions += 1;
+                        stats.totalMinutes += settings.focus;
+                        saveTodayStats();
+
+                        // Increment Active Task Pomodoro Count
+                        if (activeTaskId) {
+                            const activeTask = tasks.find(t => t.id === activeTaskId);
+                            if (activeTask) {
+                                activeTask.completedPomos += 1;
+                                saveTasks();
+                            }
+                        }
+                        renderTasks();
+                        renderStats();
+                    }
+
+                    const isLongBreakDue = completedFocusInCycle > 0 && (completedFocusInCycle % settings.longBreakInterval === 0);
+                    const nextMode = isLongBreakDue ? 'longBreak' : 'shortBreak';
+                    showToast(
+                        isSkipped
+                            ? `Skipped to ${MODE_CONFIG[nextMode].title}`
+                            : `Focus session complete! Time for a ${MODE_CONFIG[nextMode].title}.`,
+                        'coffee'
+                    );
+                    switchMode(nextMode, !isSkipped && settings.autoStartBreaks);
+                } else {
+                    showToast(
+                        isSkipped
+                            ? 'Break skipped! Ready to focus.'
+                            : 'Break finished! Ready for your next focus session.',
+                        'flame'
+                    );
+                    switchMode('focus', !isSkipped && settings.autoStartPomodoros);
+                }
+            }
+
+            // --- STATS RENDERING ---
+            function renderStats() {
+                const now = new Date();
+                todayDateLabel.textContent = now.toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric'
+                });
+
+                statSessionsCount.textContent = stats.completedSessions;
+                headerStatSessions.textContent = `${stats.completedSessions} ${stats.completedSessions === 1 ? 'session' : 'sessions'}`;
+
+                const hours = Math.floor(stats.totalMinutes / 60);
+                const mins = stats.totalMinutes % 60;
+                const formattedTime = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+                statFocusTime.textContent = formattedTime;
+                headerStatMinutes.textContent = formattedTime;
+
+                const doneTasks = tasks.filter(t => t.done).length;
+                statTasksDone.textContent = doneTasks;
+                statTasksTotal.textContent = `/ ${tasks.length}`;
+            }
+
+            // --- TASK MANAGER LOGIC ---
+            function ensureActiveTaskValid() {
+                if (activeTaskId && !tasks.some(t => t.id === activeTaskId)) {
+                    activeTaskId = null;
+                }
+                if (!activeTaskId) {
+                    const firstIncomplete = tasks.find(t => !t.done);
+                    if (firstIncomplete) {
+                        activeTaskId = firstIncomplete.id;
+                    }
+                }
+            }
+
+            function updateActiveTaskBanner() {
+                ensureActiveTaskValid();
+                const activeTask = tasks.find(t => t.id === activeTaskId);
+                if (activeTask) {
+                    currentTaskLabel.textContent = activeTask.title;
+                    currentTaskPomoBadge.textContent = `${activeTask.completedPomos} / ${activeTask.est} 🍅`;
+                } else {
+                    currentTaskLabel.textContent = 'Select or add a task to focus on';
+                    currentTaskPomoBadge.textContent = '';
+                }
+            }
+
+            function updateTaskSummaryEstimate() {
+                const remainingPomos = tasks.reduce((acc, task) => {
+                    if (task.done) return acc;
+                    return acc + Math.max(0, task.est - task.completedPomos);
+                }, 0);
+                const totalMins = remainingPomos * settings.focus;
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
+                taskSummarySubtitle.textContent = `Remaining workload: ${remainingPomos} pomos (${h > 0 ? h + 'h ' : ''}${m}m)`;
+            }
+
+            function renderTasks() {
+                updateActiveTaskBanner();
+                updateTaskSummaryEstimate();
+                renderStats();
+
+                taskListContainer.innerHTML = '';
+                if (tasks.length === 0) {
+                    emptyTaskState.classList.remove('hidden');
+                    return;
+                }
+                emptyTaskState.classList.add('hidden');
+
+                tasks.forEach(task => {
+                    const isSelected = task.id === activeTaskId;
+                    const item = document.createElement('div');
+                    item.className = `group flex items-center justify-between gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                            ? 'bg-white dark:bg-slate-800 accent-border shadow-sm ring-1 ring-[var(--accent-color)]'
+                            : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`;
+
+                    item.innerHTML = `
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <button type="button" data-action="toggle-done" data-id="${task.id}" class="w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors shrink-0 ${
+                                task.done
+                                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                                    : 'border-slate-300 dark:border-slate-600 hover:border-emerald-500'
+                            }">
+                                ${task.done ? '<i data-lucide="check" class="w-3.5 h-3.5 stroke-[3]"></i>' : ''}
+                            </button>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium truncate ${
+                                    task.done ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'
+                                }">${escapeHTML(task.title)}</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 shrink-0">
+                            <span class="px-2 py-0.5 rounded-lg text-xs font-mono font-semibold ${
+                                isSelected ? 'accent-soft-bg accent-text' : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300'
+                            }">
+                                ${task.completedPomos}/${task.est}
+                            </span>
+                            <button type="button" data-action="delete-task" data-id="${task.id}" title="Delete Task" class="opacity-70 sm:opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    `;
+
+                    // Clicking row selects task as active
+                    item.addEventListener('click', (e) => {
+                        const actionBtn = e.target.closest('button');
+                        if (actionBtn) {
+                            const action = actionBtn.getAttribute('data-action');
+                            if (action === 'toggle-done') {
+                                task.done = !task.done;
+                                saveTasks();
+                                renderTasks();
+                            } else if (action === 'delete-task') {
+                                tasks = tasks.filter(t => t.id !== task.id);
+                                saveTasks();
+                                renderTasks();
+                                showToast('Task removed', 'trash-2');
+                            }
+                            return;
+                        }
+                        activeTaskId = task.id;
+                        saveTasks();
+                        renderTasks();
+                    });
+
+                    taskListContainer.appendChild(item);
+                });
+
+                lucide.createIcons({ nodes: [taskListContainer] });
+            }
+
+            // --- THEME & MUTE MANAGEMENT ---
+            function initTheme() {
+                const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'dark';
+                if (savedTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+                updateThemeIcon();
+            }
+
+            function toggleTheme() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem(STORAGE_KEYS.THEME, isDark ? 'dark' : 'light');
+                updateThemeIcon();
+            }
+
+            function updateThemeIcon() {
+                const isDark = document.documentElement.classList.contains('dark');
+                const icon = document.getElementById('themeIcon');
+                icon.setAttribute('data-lucide', isDark ? 'sun' : 'moon');
+                lucide.createIcons({ nodes: [themeToggleBtn] });
+            }
+
+            function updateMuteIcon() {
+                const icon = document.getElementById('quickMuteIcon');
+                icon.setAttribute('data-lucide', settings.soundEnabled ? 'volume-2' : 'volume-x');
+                lucide.createIcons({ nodes: [quickMuteBtn] });
+            }
+
+            // --- SETTINGS MODAL ---
+            function openSettingsModal() {
+                settingFocus.value = settings.focus;
+                settingShort.value = settings.shortBreak;
+                settingLong.value = settings.longBreak;
+                settingAutoBreak.checked = settings.autoStartBreaks;
+                settingAutoPomo.checked = settings.autoStartPomodoros;
+                settingLongInterval.value = settings.longBreakInterval;
+                settingSoundEnabled.checked = settings.soundEnabled;
+                settingVolume.value = settings.volume;
+                volumeValueLabel.textContent = `${settings.volume}%`;
+
+                settingsModal.classList.remove('hidden');
+                settingsModal.classList.add('flex');
+            }
+
+            function closeSettingsModal() {
+                settingsModal.classList.add('hidden');
+                settingsModal.classList.remove('flex');
+            }
+
+            // --- EVENT LISTENERS ---
+            startPauseBtn.addEventListener('click', toggleTimer);
+            resetTimerBtn.addEventListener('click', resetTimer);
+            skipTimerBtn.addEventListener('click', () => handleSessionComplete(true));
+
+            modeTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const targetMode = tab.getAttribute('data-mode-btn');
+                    if (targetMode !== currentMode) {
+                        switchMode(targetMode, false);
+                    }
+                });
+            });
+
+            // Task Form Listeners
+            decPomoBtn.addEventListener('click', () => {
+                const current = parseInt(taskEstInput.value, 10) || 1;
+                taskEstInput.value = Math.max(1, current - 1);
+            });
+
+            incPomoBtn.addEventListener('click', () => {
+                const current = parseInt(taskEstInput.value, 10) || 1;
+                taskEstInput.value = Math.min(20, current + 1);
+            });
+
+            addTaskForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const title = taskTitleInput.value.trim();
+                const est = Math.min(20, Math.max(1, parseInt(taskEstInput.value, 10) || 1));
+                if (!title) return;
+
+                const newTask = {
+                    id: 'task-' + Date.now(),
+                    title,
+                    est,
+                    completedPomos: 0,
+                    done: false
+                };
+
+                tasks.push(newTask);
+                if (!activeTaskId) {
+                    activeTaskId = newTask.id;
+                }
+                saveTasks();
+                renderTasks();
+
+                taskTitleInput.value = '';
+                taskEstInput.value = '1';
+                showToast('Task added to queue', 'check-circle-2');
+            });
+
+            clearCompletedTasksBtn.addEventListener('click', () => {
+                const completedCount = tasks.filter(t => t.done).length;
+                if (completedCount === 0) {
+                    showToast('No completed tasks to clear', 'info');
+                    return;
+                }
+                tasks = tasks.filter(t => !t.done);
+                saveTasks();
+                renderTasks();
+                showToast(`Cleared ${completedCount} completed task(s)`, 'sparkles');
+            });
+
+            clearAllTasksBtn.addEventListener('click', () => {
+                if (tasks.length === 0) return;
+                tasks = [];
+                activeTaskId = null;
+                saveTasks();
+                renderTasks();
+                showToast('All tasks cleared', 'trash-2');
+            });
+
+            resetStatsBtn.addEventListener('click', () => {
+                stats.completedSessions = 0;
+                stats.totalMinutes = 0;
+                completedFocusInCycle = 0;
+                saveTodayStats();
+                renderStats();
+                renderCycleDots();
+                showToast("Today's statistics reset", 'rotate-ccw');
+            });
+
+            // Settings & Theme Listeners
+            themeToggleBtn.addEventListener('click', toggleTheme);
+            quickMuteBtn.addEventListener('click', () => {
+                settings.soundEnabled = !settings.soundEnabled;
+                saveSettings();
+                updateMuteIcon();
+                showToast(settings.soundEnabled ? 'Sound notifications enabled' : 'Sound muted', settings.soundEnabled ? 'volume-2' : 'volume-x');
+            });
+
+            openSettingsBtn.addEventListener('click', openSettingsModal);
+            closeSettingsBtn.addEventListener('click', closeSettingsModal);
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target === settingsModal) closeSettingsModal();
+            });
+
+            settingVolume.addEventListener('input', () => {
+                volumeValueLabel.textContent = `${settingVolume.value}%`;
+            });
+
+            testSoundBtn.addEventListener('click', () => {
+                const prevSound = settings.soundEnabled;
+                const prevVol = settings.volume;
+                settings.soundEnabled = true;
+                settings.volume = parseInt(settingVolume.value, 10) || 80;
+                playSound('complete');
+                settings.soundEnabled = prevSound;
+                settings.volume = prevVol;
+            });
+
+            restoreDefaultSettingsBtn.addEventListener('click', () => {
+                settings = { ...DEFAULT_SETTINGS };
+                saveSettings();
+                openSettingsModal();
+                switchMode(currentMode, false);
+                updateMuteIcon();
+                renderTasks();
+                showToast('Default settings restored', 'check');
+            });
+
+            settingsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const prevDuration = getDurationForMode(currentMode);
+
+                settings.focus = Math.min(120, Math.max(1, parseInt(settingFocus.value, 10) || 25));
+                settings.shortBreak = Math.min(60, Math.max(1, parseInt(settingShort.value, 10) || 5));
+                settings.longBreak = Math.min(90, Math.max(1, parseInt(settingLong.value, 10) || 15));
+                settings.longBreakInterval = Math.min(12, Math.max(2, parseInt(settingLongInterval.value, 10) || 4));
+                settings.autoStartBreaks = settingAutoBreak.checked;
+                settings.autoStartPomodoros = settingAutoPomo.checked;
+                settings.soundEnabled = settingSoundEnabled.checked;
+                settings.volume = parseInt(settingVolume.value, 10) || 80;
+
+                saveSettings();
+                updateMuteIcon();
+
+                const newDuration = getDurationForMode(currentMode);
+                if (!isRunning && prevDuration !== newDuration) {
+                    totalSeconds = newDuration;
+                    remainingSeconds = newDuration;
+                    updateTimerUI();
+                }
+                renderCycleDots();
+                renderTasks();
+                closeSettingsModal();
+                showToast('Preferences saved', 'sliders-horizontal');
+            });
+
+            // Global Keyboard Shortcuts
+            window.addEventListener('keydown', (e) => {
+                const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    toggleTimer();
+                } else if (e.key === 'r' || e.key === 'R') {
+                    e.preventDefault();
+                    resetTimer();
+                } else if (e.key === 'n' || e.key === 'N') {
+                    e.preventDefault();
+                    handleSessionComplete(true);
+                } else if (e.key === 's' || e.key === 'S') {
+                    e.preventDefault();
+                    if (settingsModal.classList.contains('hidden')) {
+                        openSettingsModal();
+                    } else {
+                        closeSettingsModal();
+                    }
+                } else if (e.key === 't' || e.key === 'T') {
+                    e.preventDefault();
+                    toggleTheme();
+                } else if (e.key === 'm' || e.key === 'M') {
+                    e.preventDefault();
+                    quickMuteBtn.click();
+                } else if (e.key === 'Escape' && !settingsModal.classList.contains('hidden')) {
+                    closeSettingsModal();
+                }
+            });
+
+            // --- INITIALIZE APP ---
+            function init() {
+                lucide.createIcons();
+                initTheme();
+                updateMuteIcon();
+                switchMode('focus', false);
+                renderTasks();
+                renderStats();
+            }
+
+            init();
+        })();
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(() => console.log('Focus Flow PWA Ready!'))
+                    .catch((err) => console.error('PWA Registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>
